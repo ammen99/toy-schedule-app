@@ -8,3 +8,6 @@ edition = "2018"
 
 [dependencies]
 iced = { git = "https://github.com/hecrj/iced/", branch = "master" }
+
+[profile.dev]
+debug = false

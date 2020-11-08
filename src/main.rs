@@ -1,4 +1,5 @@
 use std::rc::Rc;
+mod style;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 enum ClassType {
@@ -79,6 +80,8 @@ struct Schedule {
     new_activity: Option<NewActivityInput>,
     new_activity_btn: iced::button::State,
     new_activity_submit_btn: iced::button::State,
+
+    theme: style::Theme,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -106,6 +109,7 @@ impl iced::Sandbox for Schedule {
             new_activity: None,
             new_activity_btn: iced::button::State::default(),
             new_activity_submit_btn: iced::button::State::default(),
+            theme: style::Theme::Dark,
         }
     }
 
@@ -162,6 +166,7 @@ impl iced::Sandbox for Schedule {
             content.push(iced::Text::new((*activity).name.clone()))
         });
 
+        let theme = self.theme;
         match &self.new_activity {
             Some(_) => {
                 content = content.push(self.new_activity_layout());
@@ -169,31 +174,38 @@ impl iced::Sandbox for Schedule {
             None => {
                 let btn = iced::Button::new(&mut self.new_activity_btn,
                                             iced::Text::new("Add new activity"))
-                    .on_press(ScheduleMessage::NewActivityRequest);
+                    .on_press(ScheduleMessage::NewActivityRequest)
+                    .style(theme);
 
                 content = content.push(btn);
             }
         };
 
-        content.into()
+        iced::Container::new(content)
+            .width(iced::Length::Fill)
+            .height(iced::Length::Fill)
+            .style(theme)
+            .into()
     }
 }
 
 impl Schedule {
     fn new_activity_layout(&mut self) -> iced::Column<ScheduleMessage> {
         if let Some(new_activity) = &mut self.new_activity {
+            let theme = self.theme;
             let new_label = |state, msg: NewActivityTextInputs, value| {
                 iced::TextInput::new(
                     state,
                     &msg.get_placeholder().as_str(),
                     value,
                     move |new_value| ScheduleMessage::NewActivityTextChanged(msg, new_value))
+                    .style(theme)
             };
 
             let new_radio = |selected, value, label| {
-                iced::Radio::new(
-                    value, label, selected,
+                iced::Radio::new(value, label, selected,
                     ScheduleMessage::NewActivityTypeSelected)
+                    .style(theme)
             };
 
             iced::Column::new()
@@ -207,7 +219,8 @@ impl Schedule {
                 .push(
                     iced::Button::new(&mut self.new_activity_submit_btn,
                                       iced::Text::new("Create activity"))
-                    .on_press(ScheduleMessage::NewActivitySubmitted))
+                    .on_press(ScheduleMessage::NewActivitySubmitted)
+                    .style(self.theme))
         } else {
             panic!("Should not happen!!!");
         }
