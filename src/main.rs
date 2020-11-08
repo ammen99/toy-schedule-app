@@ -11,7 +11,7 @@ struct Activity {
     name: String,
     url: String,
     class_type: ClassType,
-    button: iced::button::State,
+    remove: iced::button::State,
 }
 
 impl Activity {
@@ -20,7 +20,7 @@ impl Activity {
             name: String::from(""),
             url: String::from(""),
             class_type: ClassType::Lecture,
-            button: iced::button::State::default(),
+            remove: iced::button::State::default(),
         }
     }
 }
@@ -34,18 +34,37 @@ type DayPlan = [Option<ScheduledClass>; 6];
 type TimePlan = [DayPlan; 5];
 
 struct NewActivityInput {
-    name: iced::text_input::State,
-    url: iced::text_input::State,
+    name_state: iced::text_input::State,
+    name: String,
+    url_state: iced::text_input::State,
+    url: String,
     class_type: Option<ClassType>,
 
     activity: Activity,
 }
 
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+enum NewActivityTextInputs {
+    Name,
+    URL,
+}
+
+impl NewActivityTextInputs {
+    fn get_placeholder(&self) -> String {
+        match *self {
+            NewActivityTextInputs::Name => { String::from("Enter activity name") }
+            NewActivityTextInputs::URL => { String::from("Enter activity URL") }
+        }
+    }
+}
+
 impl NewActivityInput {
     fn new() -> NewActivityInput {
         NewActivityInput {
-            name: iced::text_input::State::default(),
-            url: iced::text_input::State::default(),
+            name_state: iced::text_input::State::default(),
+            name: String::from(""),
+            url_state: iced::text_input::State::default(),
+            url: String::from(""),
             class_type: None,
             activity: Activity::new(),
         }
@@ -59,9 +78,10 @@ struct Schedule {
     // GUI elements
     new_activity: Option<NewActivityInput>,
     new_activity_btn: iced::button::State,
+    new_activity_submit_btn: iced::button::State,
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone)]
 enum ScheduleMessage {
     // A new activity has been requested
     NewActivityRequest,
@@ -69,8 +89,11 @@ enum ScheduleMessage {
     // The type of the new activity has been selected
     NewActivityTypeSelected(ClassType),
 
-    // The properties of the new activity have been changed
-    NewActivityTextChanged,
+    // New activity text updated
+    NewActivityTextChanged(NewActivityTextInputs, String),
+
+    // New activity should be created
+    NewActivitySubmitted,
 }
 
 impl iced::Sandbox for Schedule {
@@ -82,6 +105,7 @@ impl iced::Sandbox for Schedule {
             time_plan: TimePlan::default(),
             new_activity: None,
             new_activity_btn: iced::button::State::default(),
+            new_activity_submit_btn: iced::button::State::default(),
         }
     }
 
@@ -100,7 +124,32 @@ impl iced::Sandbox for Schedule {
                     activity.class_type = Some(activity_type);
                 }
             }
-            ScheduleMessage::NewActivityTextChanged => {
+
+            ScheduleMessage::NewActivityTextChanged(input, value) => {
+                if let Some(activity) = &mut self.new_activity {
+                    match input {
+                        NewActivityTextInputs::Name => {
+                            activity.name = value;
+                        }
+                        NewActivityTextInputs::URL => {
+                            activity.url = value;
+                        }
+                    }
+                }
+            }
+
+            ScheduleMessage::NewActivitySubmitted => {
+                if let Some(activity) = &mut self.new_activity {
+                    self.activities.push(Rc::new(Activity {
+                        name: activity.name.clone(),
+                        url: activity.url.clone(),
+                        class_type: activity.class_type.unwrap_or(ClassType::Lecture),
+                        remove: iced::button::State::default(),
+                    }));
+                    self.new_activity = None;
+                } else {
+                    panic!("Application bug");
+                }
             }
         }
     }
@@ -133,12 +182,12 @@ impl iced::Sandbox for Schedule {
 impl Schedule {
     fn new_activity_layout(&mut self) -> iced::Column<ScheduleMessage> {
         if let Some(new_activity) = &mut self.new_activity {
-            let new_label = |state, label| {
+            let new_label = |state, msg: NewActivityTextInputs, value| {
                 iced::TextInput::new(
                     state,
-                    &".".repeat(20).as_str(),
-                    label,
-                    |_| ScheduleMessage::NewActivityTextChanged)
+                    &msg.get_placeholder().as_str(),
+                    value,
+                    move |new_value| ScheduleMessage::NewActivityTextChanged(msg, new_value))
             };
 
             let new_radio = |selected, value, label| {
@@ -150,11 +199,15 @@ impl Schedule {
             iced::Column::new()
                 .spacing(20)
                 .align_items(iced::Align::Start)
-                .push(new_label(&mut new_activity.name, "Activity name"))
-                .push(new_label(&mut new_activity.url, "Activity URL"))
+                .push(new_label(&mut new_activity.name_state, NewActivityTextInputs::Name, &new_activity.name))
+                .push(new_label(&mut new_activity.url_state, NewActivityTextInputs::URL, &new_activity.url))
                 .push(new_radio(new_activity.class_type, ClassType::Lecture, "Lecture"))
                 .push(new_radio(new_activity.class_type, ClassType::ProblemClass, "Problem Class"))
                 .push(new_radio(new_activity.class_type, ClassType::Tutorial, "Tutorial"))
+                .push(
+                    iced::Button::new(&mut self.new_activity_submit_btn,
+                                      iced::Text::new("Create activity"))
+                    .on_press(ScheduleMessage::NewActivitySubmitted))
         } else {
             panic!("Should not happen!!!");
         }
