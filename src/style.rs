@@ -100,6 +100,15 @@ impl From<Theme> for Box<dyn pick_list::StyleSheet> {
     }
 }
 
+impl From<Theme> for Box<dyn iced::rule::StyleSheet> {
+    fn from(theme: Theme) -> Self {
+        match theme {
+            Theme::Light => Default::default(),
+            Theme::Dark => dark::Rule.into(),
+        }
+    }
+}
+
 mod light {
     use iced::{button, Background, Color, Vector};
 
@@ -109,9 +118,9 @@ mod light {
         fn active(&self) -> button::Style {
             button::Style {
                 background: Some(Background::Color(Color::from_rgb(
-                    0.11, 0.42, 0.87,
+                    0.87, 0.22, 0.11,
                 ))),
-                border_radius: 12,
+                border_radius: 16,
                 shadow_offset: Vector::new(1.0, 1.0),
                 text_color: Color::from_rgb8(0xEE, 0xEE, 0xEE),
                 ..button::Style::default()
@@ -131,7 +140,7 @@ mod light {
 mod dark {
     use iced::{
         button, checkbox, container, progress_bar, radio, scrollable,
-        slider, text_input, pick_list, Background, Color,
+        slider, text_input, pick_list, rule, Background, Color,
     };
 
     const SURFACE: Color = Color::from_rgb(
@@ -393,47 +402,61 @@ mod dark {
 
     impl pick_list::StyleSheet for PickList {
         fn menu(&self) -> pick_list::Menu {
-         pick_list::Menu {
-             text_color: Color::WHITE,
-             background: ACTIVE.into(),
-             border_width: 1,
-             border_color: Color {
-                 a: 0.7,
-                 ..Color::BLACK
-             },
-             selected_background: Color {
-                 a: 0.5,
-                 ..Color::BLACK
-             }
-             .into(),
-             selected_text_color: Color::WHITE,
-         }
-     }
+            pick_list::Menu {
+                text_color: Color::WHITE,
+                background: ACTIVE.into(),
+                border_width: 1,
+                border_color: Color {
+                    a: 0.7,
+                    ..Color::BLACK
+                },
+                selected_background: Color {
+                    a: 0.5,
+                    ..Color::BLACK
+                }
+                .into(),
+                selected_text_color: Color::WHITE,
+            }
+        }
 
-     fn active(&self) -> pick_list::Style {
-         pick_list::Style {
-             text_color: Color::WHITE,
-             background: SURFACE.into(),
-             border_width: 1,
-             border_color: Color {
-                 a: 0.6,
-                 ..Color::BLACK
-             },
-             border_radius: 2,
-             icon_size: 0.5,
-         }
-     }
+        fn active(&self) -> pick_list::Style {
+            pick_list::Style {
+                text_color: Color::WHITE,
+                background: SURFACE.into(),
+                border_width: 1,
+                border_color: Color {
+                    a: 0.6,
+                    ..Color::BLACK
+                },
+                border_radius: 2,
+                icon_size: 0.5,
+            }
+        }
 
-     fn hovered(&self) -> pick_list::Style {
-         let active = self.active();
+        fn hovered(&self) -> pick_list::Style {
+            let active = self.active();
 
-         pick_list::Style {
-             border_color: Color {
-                 a: 0.9,
-                 ..Color::BLACK
-             },
-             ..active
-         }
-     }
- }
+            pick_list::Style {
+                border_color: Color {
+                    a: 0.9,
+                    ..Color::BLACK
+                },
+                ..active
+            }
+        }
+    }
+
+
+    pub struct Rule;
+    impl rule::StyleSheet for Rule {
+        fn style(&self) -> rule::Style {
+            rule::Style {
+                color: SURFACE,
+                width: 2,
+                radius: 1,
+                fill_mode: rule::FillMode::Full,
+            }
+        }
+    }
+
 }

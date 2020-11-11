@@ -67,6 +67,7 @@ struct ActivitiesArea {
 
     // Buttons
     new_activity_btn: iced::button::State,
+    activities_erase_btn: Vec<iced::button::State>,
 }
 
 impl ActivitiesArea {
@@ -82,6 +83,7 @@ impl ActivitiesArea {
             adding_activity: false,
 
             new_activity_btn: iced::button::State::default(),
+            activities_erase_btn: vec![],
         }
     }
 }
@@ -104,6 +106,9 @@ enum ScheduleMessage {
     // New activity should be created
     NewActivitySubmitted,
 
+    // Remove activity (idx)
+    RemoveActivity(usize),
+
     // Activity chosen (day, block, idx)
     ActivityChosen(usize, usize, Option<usize>),
 
@@ -117,7 +122,7 @@ static CAPTIONS: &'static [&'static str] =
 fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, theme: style::Theme)
         -> iced::Element<'a, ScheduleMessage> {
     let mut content = iced::Row::<ScheduleMessage>::new()
-        .push(iced::Rule::vertical(10));
+        .push(iced::Rule::vertical(10).style(theme));
 
     let pick_list_items: Vec<ActivityPickListItem> =
         activities.iter().enumerate().map(|(i, activity)| {
@@ -128,9 +133,12 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
         let mut clock_begin = 8; // 08:00
         let mut day_column =
             iced::Column::<ScheduleMessage>::new()
-          //  .push(iced::Space::with_height(iced::Length::Units(50)))
+            .push(iced::Rule::horizontal(0).style(theme))
+            .push(iced::Space::with_height(iced::Length::Units(15)))
             .push(iced::Text::new(CAPTIONS[day_idx].clone()))
-            .push(iced::Rule::horizontal(30));
+            .push(iced::Rule::horizontal(30).style(theme));
+
+        let length = day.len();
 
         for (block_idx, block) in day.iter_mut().enumerate() {
             let pick_list = iced::pick_list::PickList::new(
@@ -148,7 +156,7 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
                             activities[activity.index].url.clone()));
             }
 
-            let block_column = iced::Column::new()
+            let mut block_column = iced::Column::new()
                 .push(iced::Text::new(format!("{:0>2}:00", clock_begin))
                       .horizontal_alignment(iced::HorizontalAlignment::Left)
                       .size(16)
@@ -163,8 +171,16 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
                               .width(iced::Length::Fill)))
                     .style(theme)
                     .width(iced::Length::Fill)
-                    .align_x(iced::Align::Center))
-                .push(iced::Rule::horizontal(30));
+                    .align_x(iced::Align::Center));
+
+            if block_idx != length - 1 {
+                block_column = block_column
+                    .push(iced::Rule::horizontal(30).style(theme));
+            } else {
+                block_column = block_column
+                    .push(iced::Space::with_height(iced::Length::Units(15)))
+                    .push(iced::Rule::horizontal(0).style(theme));
+            }
 
             day_column = day_column.push(block_column);
             clock_begin += 2; // + 02:00
@@ -172,10 +188,12 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
 
         content = content
             .push(day_column.max_width(150))
-            .push(iced::Rule::vertical(10));
+            .push(iced::Rule::vertical(10).style(theme))
     }
 
-    content.max_height(900).into()
+    content
+        .max_height(866)
+        .into()
 }
 
 #[derive(Savefile, Default)]
@@ -278,6 +296,18 @@ impl iced::Sandbox for Schedule {
             ScheduleMessage::LaunchMeeting(url) => {
                 open::with(url.clone(), "google-chrome-unstable").ok();
             }
+
+            ScheduleMessage::RemoveActivity(remove_idx) => {
+                for day in self.time_plan.iter_mut() {
+                    for block in day.iter_mut() {
+                        if block.activity.as_ref().map(|item| {item.index}) == Some(remove_idx) {
+                            block.activity = None;
+                        }
+                    }
+                }
+
+                self.activities.remove(remove_idx);
+            }
         }
     }
 
@@ -294,7 +324,8 @@ impl iced::Sandbox for Schedule {
 
         iced::Container::new(content)
             .width(iced::Length::Fill)
-            .height(iced::Length::Fill)
+            .height(iced::Length::Shrink)
+            //.height(iced::Length::Fill)
             .style(theme)
             .into()
     }
@@ -306,9 +337,31 @@ impl ActivitiesArea {
         let mut content = iced::Column::new()
             .padding(20).align_items(iced::Align::Center);
 
-        content = activities.iter().fold(content, |content, activity| {
-            content.push(iced::Text::new((*activity).name.clone()))
-        });
+        self.activities_erase_btn.resize(activities.len(), iced::button::State::new());
+
+        content = activities.iter()
+            .zip(self.activities_erase_btn.iter_mut())
+            .enumerate()
+            .fold(content, |content, (idx, (activity, btn))| {
+                content
+                    .push(iced::Row::new()
+                          .push(iced::Button::new(btn, iced::Text::new("X")
+                                                  .horizontal_alignment(iced::HorizontalAlignment::Center))
+                                .on_press(ScheduleMessage::RemoveActivity(idx))
+                                .style(style::Theme::Light)
+                                .width(iced::Length::Units(30))
+                                .height(iced::Length::Units(30)))
+                          .push(iced::Space::with_width(iced::Length::Units(10)))
+                          .push(iced::Text::new((*activity).name.clone())
+                                .horizontal_alignment(iced::HorizontalAlignment::Left)
+                                .vertical_alignment(iced::VerticalAlignment::Center)
+                                .height(iced::Length::Fill))
+                          .width(iced::Length::Units(100))
+                          .height(iced::Length::Units(30)))
+                    .push(iced::Space::with_height(iced::Length::Units(5)))
+            });
+
+        content = content.push(iced::Space::with_height(iced::Length::Units(10)));
 
         if self.adding_activity {
             content = content.push(self.new_activity.layout(theme));
@@ -321,7 +374,7 @@ impl ActivitiesArea {
             content = content.push(btn);
         }
 
-        content
+        content.align_items(iced::Align::Start)
     }
 }
 
@@ -353,7 +406,7 @@ pub fn main() {
     use iced::Sandbox;
 
     let mut stgs = iced::Settings::default();
-    stgs.window.size = (1300, 930);
+    stgs.window.size = (1300, 906);
     match Schedule::run(stgs) {
         Ok(_) => {}
         Err(_) => {
