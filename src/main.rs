@@ -341,7 +341,8 @@ impl iced::Sandbox for Schedule {
             }
 
             ScheduleMessage::EditActivityRequest(idx) => {
-                self.activity_area.start_edit(&self.activities[idx]);
+                self.activity_area.start_edit(
+                    find_activity(&mut self.activities, Some(idx)).unwrap());
             }
 
             ScheduleMessage::CancelEditRequest => {
