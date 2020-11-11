@@ -8,7 +8,7 @@ use std::fs;
 mod style;
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Savefile)]
+#[derive(Debug, Clone, Eq, PartialEq, Default, Savefile)]
 struct Activity {
     name: String,
     url: String,
@@ -63,11 +63,12 @@ struct ActivityCreateParams {
 struct ActivitiesArea {
     // New activities input
     new_activity: ActivityCreateParams,
-    adding_activity: bool,
+    editing_activity: Option<usize>,
 
     // Buttons
     new_activity_btn: iced::button::State,
     activities_erase_btn: Vec<iced::button::State>,
+    activities_edit_btn: Vec<iced::button::State>,
 }
 
 impl ActivitiesArea {
@@ -80,10 +81,12 @@ impl ActivitiesArea {
                 url: String::from(""),
                 new_activity_submit_btn: iced::button::State::default(),
             },
-            adding_activity: false,
+
+            editing_activity: None,
 
             new_activity_btn: iced::button::State::default(),
             activities_erase_btn: vec![],
+            activities_edit_btn: vec![],
         }
     }
 }
@@ -105,6 +108,9 @@ enum ScheduleMessage {
 
     // New activity should be created
     NewActivitySubmitted,
+
+    // Edit the activity with given index
+    EditActivityRequest(usize),
 
     // Remove activity (idx)
     RemoveActivity(usize),
@@ -227,6 +233,14 @@ impl Drop for Schedule {
     }
 }
 
+impl Schedule {
+    fn start_edit(&mut self, idx: usize) {
+        self.activity_area.editing_activity = Some(idx);
+        self.activity_area.new_activity.name.clear();
+        self.activity_area.new_activity.url.clear();
+    }
+}
+
 impl iced::Sandbox for Schedule {
     type Message = ScheduleMessage;
 
@@ -261,12 +275,14 @@ impl iced::Sandbox for Schedule {
         let new_activity = &mut self.activity_area.new_activity;
         match message {
             ScheduleMessage::NewActivityRequest => {
-                assert_eq!(self.activity_area.adding_activity, false);
-                self.activity_area.adding_activity = true;
+                assert_eq!(self.activity_area.editing_activity, None);
+                self.activities.push(Activity::default());
+                let idx = self.activities.len() - 1;
+                self.start_edit(idx);
             }
 
             ScheduleMessage::NewActivityTextChanged(input, value) => {
-                assert_eq!(self.activity_area.adding_activity, true);
+                assert_ne!(self.activity_area.editing_activity, None);
                 match input {
                     NewActivityTextInputs::Name => {
                         new_activity.name = value;
@@ -278,12 +294,12 @@ impl iced::Sandbox for Schedule {
             }
 
             ScheduleMessage::NewActivitySubmitted => {
-                assert_eq!(self.activity_area.adding_activity, true);
-                self.activities.push(Activity {
+                assert_ne!(self.activity_area.editing_activity, None);
+                self.activities[self.activity_area.editing_activity.unwrap()] = Activity {
                     name: new_activity.name.clone(),
                     url: new_activity.url.clone(),
-                });
-                self.activity_area.adding_activity = false;
+                };
+                self.activity_area.editing_activity = None;
             }
 
             ScheduleMessage::ActivityChosen(day, block, idx) => {
@@ -297,6 +313,10 @@ impl iced::Sandbox for Schedule {
                 open::with(url.clone(), "google-chrome-unstable").ok();
             }
 
+            ScheduleMessage::EditActivityRequest(idx) => {
+                self.start_edit(idx);
+            }
+
             ScheduleMessage::RemoveActivity(remove_idx) => {
                 for day in self.time_plan.iter_mut() {
                     for block in day.iter_mut() {
@@ -307,6 +327,7 @@ impl iced::Sandbox for Schedule {
                 }
 
                 self.activities.remove(remove_idx);
+                self.activity_area.editing_activity = None;
             }
         }
     }
@@ -338,17 +359,28 @@ impl ActivitiesArea {
             .padding(20).align_items(iced::Align::Center);
 
         self.activities_erase_btn.resize(activities.len(), iced::button::State::new());
+        self.activities_edit_btn.resize(activities.len(), iced::button::State::new());
+
+        let btns = self.activities_erase_btn.iter_mut()
+            .zip(self.activities_edit_btn.iter_mut());
 
         content = activities.iter()
-            .zip(self.activities_erase_btn.iter_mut())
+            .zip(btns)
             .enumerate()
-            .fold(content, |content, (idx, (activity, btn))| {
+            .fold(content, |content, (idx, (activity, (erase, edit)))| {
                 content
                     .push(iced::Row::new()
-                          .push(iced::Button::new(btn, iced::Text::new("X")
+                          .push(iced::Button::new(erase, iced::Text::new("X")
                                                   .horizontal_alignment(iced::HorizontalAlignment::Center))
                                 .on_press(ScheduleMessage::RemoveActivity(idx))
                                 .style(style::Theme::Light)
+                                .width(iced::Length::Units(30))
+                                .height(iced::Length::Units(30)))
+                          .push(iced::Space::with_width(iced::Length::Units(10)))
+                          .push(iced::Button::new(edit, iced::Text::new("E")
+                                                  .horizontal_alignment(iced::HorizontalAlignment::Center))
+                                .on_press(ScheduleMessage::EditActivityRequest(idx))
+                                .style(style::EditButton)
                                 .width(iced::Length::Units(30))
                                 .height(iced::Length::Units(30)))
                           .push(iced::Space::with_width(iced::Length::Units(10)))
@@ -356,14 +388,14 @@ impl ActivitiesArea {
                                 .horizontal_alignment(iced::HorizontalAlignment::Left)
                                 .vertical_alignment(iced::VerticalAlignment::Center)
                                 .height(iced::Length::Fill))
-                          .width(iced::Length::Units(100))
+                          .width(iced::Length::Units(200))
                           .height(iced::Length::Units(30)))
                     .push(iced::Space::with_height(iced::Length::Units(5)))
             });
 
         content = content.push(iced::Space::with_height(iced::Length::Units(10)));
 
-        if self.adding_activity {
+        if self.editing_activity != None {
             content = content.push(self.new_activity.layout(theme));
         } else {
             let btn = iced::Button::new(&mut self.new_activity_btn,
@@ -396,7 +428,7 @@ impl ActivityCreateParams {
             .push(new_label(&mut self.url_state, NewActivityTextInputs::URL, &self.url))
             .push(
                 iced::Button::new(&mut self.new_activity_submit_btn,
-                                  iced::Text::new("Create activity"))
+                                  iced::Text::new("Submit"))
                 .on_press(ScheduleMessage::NewActivitySubmitted)
                 .style(theme))
     }

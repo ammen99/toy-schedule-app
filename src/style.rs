@@ -109,6 +109,42 @@ impl From<Theme> for Box<dyn iced::rule::StyleSheet> {
     }
 }
 
+pub struct EditButton;
+
+impl From<EditButton> for Box<dyn iced::button::StyleSheet> {
+    fn from(theme: EditButton) -> Self {
+        return edit::Button.into();
+    }
+}
+
+mod edit {
+    use iced::{button, Background, Color, Vector};
+
+    pub struct Button;
+
+    impl button::StyleSheet for Button {
+        fn active(&self) -> button::Style {
+            button::Style {
+                background: Some(Background::Color(Color::from_rgb(
+                    0.87, 0.56, 0.11,
+                ))),
+                border_radius: 16,
+                shadow_offset: Vector::new(1.0, 1.0),
+                text_color: Color::from_rgb8(0xEE, 0xEE, 0xEE),
+                ..button::Style::default()
+            }
+        }
+
+        fn hovered(&self) -> button::Style {
+            button::Style {
+                text_color: Color::WHITE,
+                shadow_offset: Vector::new(1.0, 2.0),
+                ..self.active()
+            }
+        }
+    }
+}
+
 mod light {
     use iced::{button, Background, Color, Vector};
 
