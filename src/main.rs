@@ -1,12 +1,20 @@
+extern crate savefile;
+
+#[macro_use]
+extern crate savefile_derive;
+
+use std::fs;
+
 mod style;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+
+#[derive(Debug, Clone, Eq, PartialEq, Savefile)]
 struct Activity {
     name: String,
     url: String,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Savefile)]
 struct ActivityPickListItem {
     index: usize,
     label: String,
@@ -170,16 +178,61 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
     content.max_height(900).into()
 }
 
+#[derive(Savefile, Default)]
+struct PersistentData {
+    activities: Vec<Activity>,
+    plan: [[Option<ActivityPickListItem>; 6]; 5],
+}
+
+fn get_cfg_file() -> String {
+    match std::env::var("HOME") {
+        Ok(path) => {
+            path + "/.config/plan"
+        }
+        Err(_) => {
+            panic!("Failed to open home directory!");
+        }
+    }
+}
+
+impl Drop for Schedule {
+    fn drop(&mut self) {
+        let mut data = PersistentData::default();
+        data.activities = self.activities.clone();
+        for (day_idx, day) in self.time_plan.iter_mut().enumerate() {
+            for (block_idx, block) in day.iter_mut().enumerate() {
+                data.plan[day_idx][block_idx] = block.activity.clone();
+            }
+        }
+
+        savefile::save_file(get_cfg_file().as_str(), 1, &data).unwrap();
+    }
+}
+
 impl iced::Sandbox for Schedule {
     type Message = ScheduleMessage;
 
     fn new() -> Schedule {
-        return Schedule {
+        let mut instance = Schedule {
             activity_area: ActivitiesArea::new(),
             time_plan: TimePlan::default(),
             theme: style::Theme::Dark,
             activities: vec![],
+        };
+
+        if fs::metadata(get_cfg_file()).is_ok() {
+            let data = (savefile::load_file(get_cfg_file().as_str(), 1)
+                as Result<PersistentData, _>).unwrap();
+
+            instance.activities = data.activities;
+            for (day_idx, day) in instance.time_plan.iter_mut().enumerate() {
+                for (block_idx, block) in day.iter_mut().enumerate() {
+                    block.activity = data.plan[day_idx][block_idx].clone();
+                }
+            }
         }
+
+        instance
     }
 
     fn title(&self) -> String {
