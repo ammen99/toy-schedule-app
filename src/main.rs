@@ -1,4 +1,3 @@
-use std::rc::Rc;
 mod style;
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -8,41 +7,34 @@ enum ClassType {
     Tutorial
 }
 
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct Activity {
     name: String,
     url: String,
     class_type: ClassType,
-    remove: iced::button::State,
 }
 
-impl Activity {
-    fn new() -> Activity {
-        Activity {
-            name: String::from(""),
-            url: String::from(""),
-            class_type: ClassType::Lecture,
-            remove: iced::button::State::default(),
-        }
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct ActivityPickListItem {
+    index: usize,
+    label: String,
+}
+
+impl ToString for ActivityPickListItem {
+    fn to_string(&self) -> String {
+        self.label.clone()
     }
 }
 
-struct ScheduledClass {
-    name: String,
-    activity: Rc<Activity>,
+#[derive(Default)]
+struct ScheduledActivity {
+    activity: Option<ActivityPickListItem>,
+    pick_state: iced::pick_list::State<ActivityPickListItem>,
+    link_state: iced::button::State,
 }
 
-type DayPlan = [Option<ScheduledClass>; 6];
+type DayPlan = [ScheduledActivity; 6];
 type TimePlan = [DayPlan; 5];
-
-struct NewActivityInput {
-    name_state: iced::text_input::State,
-    name: String,
-    url_state: iced::text_input::State,
-    url: String,
-    class_type: Option<ClassType>,
-
-    activity: Activity,
-}
 
 #[derive(Debug, Eq, PartialEq, Copy, Clone)]
 enum NewActivityTextInputs {
@@ -59,32 +51,51 @@ impl NewActivityTextInputs {
     }
 }
 
-impl NewActivityInput {
-    fn new() -> NewActivityInput {
-        NewActivityInput {
-            name_state: iced::text_input::State::default(),
-            name: String::from(""),
-            url_state: iced::text_input::State::default(),
-            url: String::from(""),
-            class_type: None,
-            activity: Activity::new(),
+struct ActivityCreateParams {
+    name_state: iced::text_input::State,
+    name: String,
+    url_state: iced::text_input::State,
+    url: String,
+    class_type: Option<ClassType>,
+
+    new_activity_submit_btn: iced::button::State,
+}
+
+struct ActivitiesArea {
+    // New activities input
+    new_activity: ActivityCreateParams,
+    adding_activity: bool,
+
+    // Buttons
+    new_activity_btn: iced::button::State,
+}
+
+impl ActivitiesArea {
+    fn new() -> ActivitiesArea {
+        ActivitiesArea {
+            new_activity: ActivityCreateParams {
+                name_state: iced::text_input::State::default(),
+                name: String::from(""),
+                url_state: iced::text_input::State::default(),
+                url: String::from(""),
+                class_type: None,
+                new_activity_submit_btn: iced::button::State::default(),
+            },
+            adding_activity: false,
+
+            new_activity_btn: iced::button::State::default(),
         }
     }
 }
 
 struct Schedule {
-    activities : Vec<Rc<Activity>>,
+    activity_area: ActivitiesArea,
+    activities: Vec<Activity>,
     time_plan : TimePlan,
-
-    // GUI elements
-    new_activity: Option<NewActivityInput>,
-    new_activity_btn: iced::button::State,
-    new_activity_submit_btn: iced::button::State,
-
     theme: style::Theme,
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum ScheduleMessage {
     // A new activity has been requested
     NewActivityRequest,
@@ -97,6 +108,52 @@ enum ScheduleMessage {
 
     // New activity should be created
     NewActivitySubmitted,
+
+    // Activity chosen (day, block, idx)
+    ActivityChosen(usize, usize, Option<usize>),
+}
+
+fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>)
+        -> iced::Row<'a, ScheduleMessage> {
+    let mut content = iced::Row::<ScheduleMessage>::new()
+        .push(iced::Rule::vertical(20));
+
+    let pick_list_items: Vec<ActivityPickListItem> =
+        activities.iter().enumerate().map(|(i, activity)| {
+            ActivityPickListItem {index: i, label: activity.name.clone()}
+        }).collect();
+
+    for (day_idx, day) in plan.iter_mut().enumerate() {
+        let mut clock_begin = 8; // 08:00
+
+        let mut day_column = iced::Column::<ScheduleMessage>::new()
+            .push(iced::Rule::horizontal(5));
+
+        for (block_idx, block) in day.iter_mut().enumerate() {
+            let mut block_column = iced::Column::new()
+                .push(iced::Text::new(format!("{:0>2}:00", clock_begin))
+                      .horizontal_alignment(iced::HorizontalAlignment::Left))
+                .push(iced::pick_list::PickList::new(
+                        &mut block.pick_state,
+                        pick_list_items.clone(),
+                        block.activity.clone(),
+                        move |sel| {
+                            ScheduleMessage::ActivityChosen(day_idx, block_idx, Some(sel.index))
+                        }));
+
+            block_column = block_column
+                .push(iced::Rule::horizontal(4))
+                .height(iced::Length::Shrink);
+            day_column = day_column.push(block_column);
+            clock_begin += 2; // + 02:00
+        }
+
+        content = content
+            .push(day_column.max_width(100))
+            .push(iced::Rule::vertical(0));
+    }
+
+    content.max_height(400)
 }
 
 impl iced::Sandbox for Schedule {
@@ -104,12 +161,10 @@ impl iced::Sandbox for Schedule {
 
     fn new() -> Schedule {
         return Schedule {
-            activities: vec![],
+            activity_area: ActivitiesArea::new(),
             time_plan: TimePlan::default(),
-            new_activity: None,
-            new_activity_btn: iced::button::State::default(),
-            new_activity_submit_btn: iced::button::State::default(),
             theme: style::Theme::Dark,
+            activities: vec![],
         }
     }
 
@@ -118,68 +173,58 @@ impl iced::Sandbox for Schedule {
     }
 
     fn update(&mut self, message: ScheduleMessage) {
+        let new_activity = &mut self.activity_area.new_activity;
         match message {
             ScheduleMessage::NewActivityRequest => {
-                self.new_activity = Some(NewActivityInput::new());
+                assert_eq!(self.activity_area.adding_activity, false);
+                self.activity_area.adding_activity = true;
             }
 
             ScheduleMessage::NewActivityTypeSelected(activity_type) => {
-                if let Some(activity) = &mut self.new_activity {
-                    activity.class_type = Some(activity_type);
-                }
+                assert_eq!(self.activity_area.adding_activity, true);
+                new_activity.class_type = Some(activity_type);
             }
 
             ScheduleMessage::NewActivityTextChanged(input, value) => {
-                if let Some(activity) = &mut self.new_activity {
-                    match input {
-                        NewActivityTextInputs::Name => {
-                            activity.name = value;
-                        }
-                        NewActivityTextInputs::URL => {
-                            activity.url = value;
-                        }
+                assert_eq!(self.activity_area.adding_activity, true);
+                match input {
+                    NewActivityTextInputs::Name => {
+                        new_activity.name = value;
+                    }
+                    NewActivityTextInputs::URL => {
+                        new_activity.url = value;
                     }
                 }
             }
 
             ScheduleMessage::NewActivitySubmitted => {
-                if let Some(activity) = &mut self.new_activity {
-                    self.activities.push(Rc::new(Activity {
-                        name: activity.name.clone(),
-                        url: activity.url.clone(),
-                        class_type: activity.class_type.unwrap_or(ClassType::Lecture),
-                        remove: iced::button::State::default(),
-                    }));
-                    self.new_activity = None;
-                } else {
-                    panic!("Application bug");
-                }
+                assert_eq!(self.activity_area.adding_activity, true);
+                self.activities.push(Activity {
+                    name: new_activity.name.clone(),
+                    url: new_activity.url.clone(),
+                    class_type: new_activity.class_type.unwrap_or(ClassType::Lecture),
+                });
+                self.activity_area.adding_activity = false;
+            }
+
+            ScheduleMessage::ActivityChosen(day, block, idx) => {
+                self.time_plan[day][block].activity = Some(ActivityPickListItem {
+                    index: idx.unwrap(),
+                    label: self.activities[idx.unwrap()].name.clone(),
+                });
             }
         }
     }
 
     fn view(&mut self) -> iced::Element<ScheduleMessage> {
-        let mut content = iced::Column::new()
-            .padding(20).align_items(iced::Align::Center);
-
-        content = self.activities.iter().fold(content, |content, activity| {
-            content.push(iced::Text::new((*activity).name.clone()))
-        });
-
         let theme = self.theme;
-        match &self.new_activity {
-            Some(_) => {
-                content = content.push(self.new_activity_layout());
-            }
-            None => {
-                let btn = iced::Button::new(&mut self.new_activity_btn,
-                                            iced::Text::new("Add new activity"))
-                    .on_press(ScheduleMessage::NewActivityRequest)
-                    .style(theme);
 
-                content = content.push(btn);
-            }
-        };
+        let activities = self.activity_area.layout(theme, &mut self.activities);
+        let table = time_plan_layout(&mut self.time_plan, &mut self.activities);
+
+        let content = iced::Row::new()
+            .push(table)
+            .push(activities);
 
         iced::Container::new(content)
             .width(iced::Length::Fill)
@@ -189,41 +234,61 @@ impl iced::Sandbox for Schedule {
     }
 }
 
-impl Schedule {
-    fn new_activity_layout(&mut self) -> iced::Column<ScheduleMessage> {
-        if let Some(new_activity) = &mut self.new_activity {
-            let theme = self.theme;
-            let new_label = |state, msg: NewActivityTextInputs, value| {
-                iced::TextInput::new(
-                    state,
-                    &msg.get_placeholder().as_str(),
-                    value,
-                    move |new_value| ScheduleMessage::NewActivityTextChanged(msg, new_value))
-                    .style(theme)
-            };
+impl ActivitiesArea {
+    fn layout<'a>(&'a mut self,
+              theme: style::Theme, activities: &mut Vec<Activity>) -> iced::Column<'a, ScheduleMessage> {
+        let mut content = iced::Column::new()
+            .padding(20).align_items(iced::Align::Center);
 
-            let new_radio = |selected, value, label| {
-                iced::Radio::new(value, label, selected,
-                    ScheduleMessage::NewActivityTypeSelected)
-                    .style(theme)
-            };
+        content = activities.iter().fold(content, |content, activity| {
+            content.push(iced::Text::new((*activity).name.clone()))
+        });
 
-            iced::Column::new()
-                .spacing(20)
-                .align_items(iced::Align::Start)
-                .push(new_label(&mut new_activity.name_state, NewActivityTextInputs::Name, &new_activity.name))
-                .push(new_label(&mut new_activity.url_state, NewActivityTextInputs::URL, &new_activity.url))
-                .push(new_radio(new_activity.class_type, ClassType::Lecture, "Lecture"))
-                .push(new_radio(new_activity.class_type, ClassType::ProblemClass, "Problem Class"))
-                .push(new_radio(new_activity.class_type, ClassType::Tutorial, "Tutorial"))
-                .push(
-                    iced::Button::new(&mut self.new_activity_submit_btn,
-                                      iced::Text::new("Create activity"))
-                    .on_press(ScheduleMessage::NewActivitySubmitted)
-                    .style(self.theme))
+        if self.adding_activity {
+            content = content.push(self.new_activity.layout(theme));
         } else {
-            panic!("Should not happen!!!");
+            let btn = iced::Button::new(&mut self.new_activity_btn,
+                                        iced::Text::new("Add new activity"))
+                .on_press(ScheduleMessage::NewActivityRequest)
+                .style(theme);
+
+            content = content.push(btn);
         }
+
+        content
+    }
+}
+
+impl ActivityCreateParams {
+    fn layout(&mut self, theme: style::Theme) -> iced::Column<ScheduleMessage> {
+        let new_label = |state, msg: NewActivityTextInputs, value| {
+            iced::TextInput::new(
+                state,
+                &msg.get_placeholder().as_str(),
+                value,
+                move |new_value| ScheduleMessage::NewActivityTextChanged(msg, new_value))
+                .style(theme)
+        };
+
+        let new_radio = |selected, value, label| {
+            iced::Radio::new(value, label, selected,
+                ScheduleMessage::NewActivityTypeSelected)
+                .style(theme)
+        };
+
+        iced::Column::new()
+            .spacing(20)
+            .align_items(iced::Align::Start)
+            .push(new_label(&mut self.name_state, NewActivityTextInputs::Name, &self.name))
+            .push(new_label(&mut self.url_state, NewActivityTextInputs::URL, &self.url))
+            .push(new_radio(self.class_type, ClassType::Lecture, "Lecture"))
+            .push(new_radio(self.class_type, ClassType::ProblemClass, "Problem Class"))
+            .push(new_radio(self.class_type, ClassType::Tutorial, "Tutorial"))
+            .push(
+                iced::Button::new(&mut self.new_activity_submit_btn,
+                                  iced::Text::new("Create activity"))
+                .on_press(ScheduleMessage::NewActivitySubmitted)
+                .style(theme))
     }
 }
 
