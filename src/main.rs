@@ -1,17 +1,9 @@
 mod style;
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone)]
-enum ClassType {
-    Lecture,
-    ProblemClass,
-    Tutorial
-}
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 struct Activity {
     name: String,
     url: String,
-    class_type: ClassType,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -56,7 +48,6 @@ struct ActivityCreateParams {
     name: String,
     url_state: iced::text_input::State,
     url: String,
-    class_type: Option<ClassType>,
 
     new_activity_submit_btn: iced::button::State,
 }
@@ -78,7 +69,6 @@ impl ActivitiesArea {
                 name: String::from(""),
                 url_state: iced::text_input::State::default(),
                 url: String::from(""),
-                class_type: None,
                 new_activity_submit_btn: iced::button::State::default(),
             },
             adding_activity: false,
@@ -100,9 +90,6 @@ enum ScheduleMessage {
     // A new activity has been requested
     NewActivityRequest,
 
-    // The type of the new activity has been selected
-    NewActivityTypeSelected(ClassType),
-
     // New activity text updated
     NewActivityTextChanged(NewActivityTextInputs, String),
 
@@ -111,12 +98,18 @@ enum ScheduleMessage {
 
     // Activity chosen (day, block, idx)
     ActivityChosen(usize, usize, Option<usize>),
+
+    // Launch meeting
+    LaunchMeeting(String),
 }
 
-fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>)
-        -> iced::Row<'a, ScheduleMessage> {
+static CAPTIONS: &'static [&'static str] =
+&["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, theme: style::Theme)
+        -> iced::Element<'a, ScheduleMessage> {
     let mut content = iced::Row::<ScheduleMessage>::new()
-        .push(iced::Rule::vertical(20));
+        .push(iced::Rule::vertical(10));
 
     let pick_list_items: Vec<ActivityPickListItem> =
         activities.iter().enumerate().map(|(i, activity)| {
@@ -125,35 +118,56 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>)
 
     for (day_idx, day) in plan.iter_mut().enumerate() {
         let mut clock_begin = 8; // 08:00
-
-        let mut day_column = iced::Column::<ScheduleMessage>::new()
-            .push(iced::Rule::horizontal(5));
+        let mut day_column =
+            iced::Column::<ScheduleMessage>::new()
+          //  .push(iced::Space::with_height(iced::Length::Units(50)))
+            .push(iced::Text::new(CAPTIONS[day_idx].clone()))
+            .push(iced::Rule::horizontal(30));
 
         for (block_idx, block) in day.iter_mut().enumerate() {
-            let mut block_column = iced::Column::new()
-                .push(iced::Text::new(format!("{:0>2}:00", clock_begin))
-                      .horizontal_alignment(iced::HorizontalAlignment::Left))
-                .push(iced::pick_list::PickList::new(
-                        &mut block.pick_state,
-                        pick_list_items.clone(),
-                        block.activity.clone(),
-                        move |sel| {
-                            ScheduleMessage::ActivityChosen(day_idx, block_idx, Some(sel.index))
-                        }));
+            let pick_list = iced::pick_list::PickList::new(
+                &mut block.pick_state,
+                pick_list_items.clone(),
+                block.activity.clone(),
+                move |sel| { ScheduleMessage::ActivityChosen(day_idx, block_idx, Some(sel.index)) })
+                .style(theme);
 
-            block_column = block_column
-                .push(iced::Rule::horizontal(4))
-                .height(iced::Length::Shrink);
+            let mut url_btn = iced::Button::new(&mut block.link_state, iced::Text::new("Meeting"))
+                .style(theme);
+            if let Some(activity) = &mut block.activity {
+                url_btn = url_btn
+                    .on_press(ScheduleMessage::LaunchMeeting(
+                            activities[activity.index].url.clone()));
+            }
+
+            let block_column = iced::Column::new()
+                .push(iced::Text::new(format!("{:0>2}:00", clock_begin))
+                      .horizontal_alignment(iced::HorizontalAlignment::Left)
+                      .size(16)
+                      .color(iced::Color::from_rgb(0.5, 0.5, 0.5)))
+                .push(iced::Space::with_height(iced::Length::Units(10)))
+                .push(iced::Container::new(
+                        iced::Column::new()
+                        .push(pick_list.width(iced::Length::Fill))
+                        .push(iced::Space::with_height(iced::Length::Units(20)))
+                        .push(iced::Container::new(url_btn)
+                              .align_x(iced::Align::Center)
+                              .width(iced::Length::Fill)))
+                    .style(theme)
+                    .width(iced::Length::Fill)
+                    .align_x(iced::Align::Center))
+                .push(iced::Rule::horizontal(30));
+
             day_column = day_column.push(block_column);
             clock_begin += 2; // + 02:00
         }
 
         content = content
-            .push(day_column.max_width(100))
-            .push(iced::Rule::vertical(0));
+            .push(day_column.max_width(150))
+            .push(iced::Rule::vertical(10));
     }
 
-    content.max_height(400)
+    content.max_height(900).into()
 }
 
 impl iced::Sandbox for Schedule {
@@ -180,11 +194,6 @@ impl iced::Sandbox for Schedule {
                 self.activity_area.adding_activity = true;
             }
 
-            ScheduleMessage::NewActivityTypeSelected(activity_type) => {
-                assert_eq!(self.activity_area.adding_activity, true);
-                new_activity.class_type = Some(activity_type);
-            }
-
             ScheduleMessage::NewActivityTextChanged(input, value) => {
                 assert_eq!(self.activity_area.adding_activity, true);
                 match input {
@@ -202,7 +211,6 @@ impl iced::Sandbox for Schedule {
                 self.activities.push(Activity {
                     name: new_activity.name.clone(),
                     url: new_activity.url.clone(),
-                    class_type: new_activity.class_type.unwrap_or(ClassType::Lecture),
                 });
                 self.activity_area.adding_activity = false;
             }
@@ -213,6 +221,10 @@ impl iced::Sandbox for Schedule {
                     label: self.activities[idx.unwrap()].name.clone(),
                 });
             }
+
+            ScheduleMessage::LaunchMeeting(url) => {
+                open::with(url.clone(), "google-chrome-unstable").ok();
+            }
         }
     }
 
@@ -220,9 +232,10 @@ impl iced::Sandbox for Schedule {
         let theme = self.theme;
 
         let activities = self.activity_area.layout(theme, &mut self.activities);
-        let table = time_plan_layout(&mut self.time_plan, &mut self.activities);
+        let table = time_plan_layout(&mut self.time_plan, &mut self.activities, theme);
 
         let content = iced::Row::new()
+            .padding(20)
             .push(table)
             .push(activities);
 
@@ -270,20 +283,11 @@ impl ActivityCreateParams {
                 .style(theme)
         };
 
-        let new_radio = |selected, value, label| {
-            iced::Radio::new(value, label, selected,
-                ScheduleMessage::NewActivityTypeSelected)
-                .style(theme)
-        };
-
         iced::Column::new()
             .spacing(20)
             .align_items(iced::Align::Start)
             .push(new_label(&mut self.name_state, NewActivityTextInputs::Name, &self.name))
             .push(new_label(&mut self.url_state, NewActivityTextInputs::URL, &self.url))
-            .push(new_radio(self.class_type, ClassType::Lecture, "Lecture"))
-            .push(new_radio(self.class_type, ClassType::ProblemClass, "Problem Class"))
-            .push(new_radio(self.class_type, ClassType::Tutorial, "Tutorial"))
             .push(
                 iced::Button::new(&mut self.new_activity_submit_btn,
                                   iced::Text::new("Create activity"))
@@ -294,7 +298,10 @@ impl ActivityCreateParams {
 
 pub fn main() {
     use iced::Sandbox;
-    match Schedule::run(iced::Settings::default()) {
+
+    let mut stgs = iced::Settings::default();
+    stgs.window.size = (1300, 930);
+    match Schedule::run(stgs) {
         Ok(_) => {}
         Err(_) => {
             eprintln!("Failed to run program");
