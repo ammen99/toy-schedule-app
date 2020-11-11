@@ -110,10 +110,42 @@ impl From<Theme> for Box<dyn iced::rule::StyleSheet> {
 }
 
 pub struct EditButton;
+pub struct InactiveButton;
 
 impl From<EditButton> for Box<dyn iced::button::StyleSheet> {
-    fn from(theme: EditButton) -> Self {
+    fn from(_theme: EditButton) -> Self {
         return edit::Button.into();
+    }
+}
+
+impl From<InactiveButton> for Box<dyn iced::button::StyleSheet> {
+    fn from(_theme: InactiveButton) -> Self {
+        return inactive::Button.into();
+    }
+}
+
+mod inactive {
+    use iced::{button, Background, Color};
+
+    pub struct Button;
+
+    impl button::StyleSheet for Button {
+        fn active(&self) -> button::Style {
+            button::Style {
+                background: Some(Background::Color(Color::from_rgb8(0x36, 0x39, 0x3F))),
+                border_radius: 3,
+                text_color: Color::from_rgb8(0x3f, 0x39, 0x3f),
+                ..button::Style::default()
+            }
+        }
+
+        fn hovered(&self) -> button::Style {
+            self.active()
+        }
+
+        fn pressed(&self) -> button::Style {
+            self.active()
+        }
     }
 }
 

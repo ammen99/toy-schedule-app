@@ -159,12 +159,15 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
                 move |sel| { ScheduleMessage::ActivityChosen(day_idx, block_idx, Some(sel.index)) })
                 .style(theme);
 
-            let mut url_btn = iced::Button::new(&mut block.link_state, iced::Text::new("Meeting"))
-                .style(theme);
+            let mut url_btn = iced::Button::new(&mut block.link_state, iced::Text::new("Meeting"));
             if let Some(activity) = &mut block.activity {
                 url_btn = url_btn
                     .on_press(ScheduleMessage::LaunchMeeting(
-                            activities[activity.index].url.clone()));
+                            activities[activity.index].url.clone()))
+                    .style(theme);
+            } else {
+                url_btn = url_btn
+                    .style(style::InactiveButton);
             }
 
             let mut block_column = iced::Column::new()
