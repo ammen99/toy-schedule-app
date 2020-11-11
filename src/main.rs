@@ -357,7 +357,7 @@ impl iced::Sandbox for Schedule {
 
         iced::Container::new(content)
             .width(iced::Length::Fill)
-            .height(iced::Length::Shrink)
+            .height(iced::Length::Fill)
             //.height(iced::Length::Fill)
             .style(theme)
             .into()
