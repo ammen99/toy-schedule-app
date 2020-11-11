@@ -241,8 +241,8 @@ impl Drop for Schedule {
 impl Schedule {
     fn start_edit(&mut self, idx: usize) {
         self.activity_area.editing_activity = Some(idx);
-        self.activity_area.new_activity.name.clear();
-        self.activity_area.new_activity.url.clear();
+        self.activity_area.new_activity.name = self.activities[idx].name.clone();
+        self.activity_area.new_activity.url = self.activities[idx].url.clone();
     }
 }
 
