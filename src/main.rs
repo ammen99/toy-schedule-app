@@ -397,7 +397,7 @@ impl ActivitiesArea {
                                 .horizontal_alignment(iced::HorizontalAlignment::Left)
                                 .vertical_alignment(iced::VerticalAlignment::Center)
                                 .height(iced::Length::Fill))
-                          .width(iced::Length::Units(200))
+                          .width(iced::Length::Units(400))
                           .height(iced::Length::Units(30)))
                     .push(iced::Space::with_height(iced::Length::Units(5)))
             });
