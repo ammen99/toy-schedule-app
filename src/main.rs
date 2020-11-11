@@ -12,6 +12,7 @@ mod style;
 struct Activity {
     name: String,
     url: String,
+    id: usize,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Savefile)]
@@ -136,8 +137,8 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
         .push(iced::Rule::vertical(10).style(theme));
 
     let pick_list_items: Vec<ActivityPickListItem> =
-        activities.iter().enumerate().map(|(i, activity)| {
-            ActivityPickListItem {index: i, label: activity.name.clone()}
+        activities.iter().map(|activity| {
+            ActivityPickListItem {index: activity.id, label: activity.name.clone()}
         }).collect();
 
     for (day_idx, day) in plan.iter_mut().enumerate() {
@@ -161,9 +162,11 @@ fn time_plan_layout<'a>(plan: &'a mut TimePlan, activities: &mut Vec<Activity>, 
 
             let mut url_btn = iced::Button::new(&mut block.link_state, iced::Text::new("Meeting"));
             if let Some(activity) = &mut block.activity {
+                let url = find_activity(activities, Some(activity.index))
+                    .map(|a| a.url.clone()).unwrap();
+
                 url_btn = url_btn
-                    .on_press(ScheduleMessage::LaunchMeeting(
-                            activities[activity.index].url.clone()))
+                    .on_press(ScheduleMessage::LaunchMeeting(url))
                     .style(theme);
             } else {
                 url_btn = url_btn
@@ -241,12 +244,10 @@ impl Drop for Schedule {
     }
 }
 
-impl Schedule {
-    fn start_edit(&mut self, idx: usize) {
-        self.activity_area.editing_activity = Some(idx);
-        self.activity_area.new_activity.name = self.activities[idx].name.clone();
-        self.activity_area.new_activity.url = self.activities[idx].url.clone();
-    }
+fn find_activity(activities: &mut Vec<Activity>, activity_id: Option<usize>) -> Option<&mut Activity> {
+    activities.iter_mut()
+        .filter(|activity| { Some(activity.id) == activity_id })
+        .nth(0)
 }
 
 impl iced::Sandbox for Schedule {
@@ -285,8 +286,20 @@ impl iced::Sandbox for Schedule {
             ScheduleMessage::NewActivityRequest => {
                 assert_eq!(self.activity_area.editing_activity, None);
                 self.activities.push(Activity::default());
-                let idx = self.activities.len() - 1;
-                self.start_edit(idx);
+
+                let mut taken = self.activities.iter()
+                    .map(|activity| {activity.id})
+                    .collect::<Vec<usize>>();
+                taken.sort();
+                let mex = taken.iter()
+                    .enumerate()
+                    .filter_map(|(idx, id)| {
+                        if *id == idx { None }
+                        else { Some(idx) } })
+                    .nth(0).unwrap_or(self.activities.len());
+
+                self.activities.last_mut().unwrap().id = mex;
+                self.activity_area.start_edit(self.activities.last().unwrap());
             }
 
             ScheduleMessage::NewActivityTextChanged(input, value) => {
@@ -303,18 +316,24 @@ impl iced::Sandbox for Schedule {
 
             ScheduleMessage::NewActivitySubmitted => {
                 assert_ne!(self.activity_area.editing_activity, None);
-                self.activities[self.activity_area.editing_activity.unwrap()] = Activity {
-                    name: new_activity.name.clone(),
-                    url: new_activity.url.clone(),
-                };
+
+                let activity = find_activity(&mut self.activities,
+                                             self.activity_area.editing_activity).unwrap();
+
+                activity.name = new_activity.name.clone();
+                activity.url = new_activity.url.clone();
                 self.activity_area.editing_activity = None;
             }
 
             ScheduleMessage::ActivityChosen(day, block, idx) => {
-                self.time_plan[day][block].activity = Some(ActivityPickListItem {
-                    index: idx.unwrap(),
-                    label: self.activities[idx.unwrap()].name.clone(),
-                });
+                if let Some(activity) = find_activity(&mut self.activities, idx) {
+                    self.time_plan[day][block].activity = Some(ActivityPickListItem {
+                        index: idx.unwrap(),
+                        label: activity.name.clone(),
+                    });
+                } else {
+                    self.time_plan[day][block].activity = None;
+                }
             }
 
             ScheduleMessage::LaunchMeeting(url) => {
@@ -322,7 +341,7 @@ impl iced::Sandbox for Schedule {
             }
 
             ScheduleMessage::EditActivityRequest(idx) => {
-                self.start_edit(idx);
+                self.activity_area.start_edit(&self.activities[idx]);
             }
 
             ScheduleMessage::CancelEditRequest => {
@@ -338,8 +357,7 @@ impl iced::Sandbox for Schedule {
                     }
                 }
 
-                self.activities.remove(remove_idx);
-                self.activity_area.editing_activity = None;
+                self.activities.retain(|activity| { activity.id != remove_idx });
             }
         }
     }
@@ -358,7 +376,6 @@ impl iced::Sandbox for Schedule {
         iced::Container::new(content)
             .width(iced::Length::Fill)
             .height(iced::Length::Fill)
-            //.height(iced::Length::Fill)
             .style(theme)
             .into()
     }
@@ -378,20 +395,19 @@ impl ActivitiesArea {
 
         content = activities.iter()
             .zip(btns)
-            .enumerate()
-            .fold(content, |content, (idx, (activity, (erase, edit)))| {
+            .fold(content, |content, (activity, (erase, edit))| {
                 content
                     .push(iced::Row::new()
                           .push(iced::Button::new(erase, iced::Text::new("X")
                                                   .horizontal_alignment(iced::HorizontalAlignment::Center))
-                                .on_press(ScheduleMessage::RemoveActivity(idx))
+                                .on_press(ScheduleMessage::RemoveActivity(activity.id))
                                 .style(style::Theme::Light)
                                 .width(iced::Length::Units(30))
                                 .height(iced::Length::Units(30)))
                           .push(iced::Space::with_width(iced::Length::Units(10)))
                           .push(iced::Button::new(edit, iced::Text::new("E")
                                                   .horizontal_alignment(iced::HorizontalAlignment::Center))
-                                .on_press(ScheduleMessage::EditActivityRequest(idx))
+                                .on_press(ScheduleMessage::EditActivityRequest(activity.id))
                                 .style(style::EditButton)
                                 .width(iced::Length::Units(30))
                                 .height(iced::Length::Units(30)))
@@ -419,6 +435,12 @@ impl ActivitiesArea {
         }
 
         content.align_items(iced::Align::Start)
+    }
+
+    fn start_edit(&mut self, activity: &Activity) {
+        self.editing_activity = Some(activity.id);
+        self.new_activity.name = activity.name.clone();
+        self.new_activity.url = activity.url.clone();
     }
 }
 
