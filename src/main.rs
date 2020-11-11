@@ -58,6 +58,7 @@ struct ActivityCreateParams {
     url: String,
 
     new_activity_submit_btn: iced::button::State,
+    new_activity_cancel_btn: iced::button::State,
 }
 
 struct ActivitiesArea {
@@ -80,6 +81,7 @@ impl ActivitiesArea {
                 url_state: iced::text_input::State::default(),
                 url: String::from(""),
                 new_activity_submit_btn: iced::button::State::default(),
+                new_activity_cancel_btn: iced::button::State::default(),
             },
 
             editing_activity: None,
@@ -111,6 +113,9 @@ enum ScheduleMessage {
 
     // Edit the activity with given index
     EditActivityRequest(usize),
+
+    // Cancel editing the activity
+    CancelEditRequest,
 
     // Remove activity (idx)
     RemoveActivity(usize),
@@ -317,6 +322,10 @@ impl iced::Sandbox for Schedule {
                 self.start_edit(idx);
             }
 
+            ScheduleMessage::CancelEditRequest => {
+                self.activity_area.editing_activity = None;
+            }
+
             ScheduleMessage::RemoveActivity(remove_idx) => {
                 for day in self.time_plan.iter_mut() {
                     for block in day.iter_mut() {
@@ -426,11 +435,16 @@ impl ActivityCreateParams {
             .align_items(iced::Align::Start)
             .push(new_label(&mut self.name_state, NewActivityTextInputs::Name, &self.name))
             .push(new_label(&mut self.url_state, NewActivityTextInputs::URL, &self.url))
-            .push(
-                iced::Button::new(&mut self.new_activity_submit_btn,
-                                  iced::Text::new("Submit"))
-                .on_press(ScheduleMessage::NewActivitySubmitted)
-                .style(theme))
+            .push(iced::Row::new()
+                  .push(iced::Button::new(&mut self.new_activity_submit_btn,
+                                          iced::Text::new("Submit"))
+                        .on_press(ScheduleMessage::NewActivitySubmitted)
+                        .style(theme))
+                  .push(iced::Space::with_width(iced::Length::Units(10)))
+                  .push(iced::Button::new(&mut self.new_activity_cancel_btn,
+                                          iced::Text::new("Cancel"))
+                        .on_press(ScheduleMessage::CancelEditRequest)
+                        .style(theme)))
     }
 }
 
